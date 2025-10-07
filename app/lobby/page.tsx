@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation" // ✅ ajout ici
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useGame } from "@/contexts/game-context"
@@ -9,17 +9,49 @@ import { Copy, Check, Users, Crown, ArrowRight } from "lucide-react"
 
 export default function LobbyPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
+  const searchParams = useSearchParams() // ✅ pour lire ?room=...&player=...
   const { room, currentPlayer, players, refreshRoom } = useGame()
+
   const [copied, setCopied] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
+  // --- 1️⃣ Initialisation : lire les query params, sauvegarder, et charger la room ---
   useEffect(() => {
-    console.log("[v0] Lobby: room =", room)
-    console.log("[v0] Lobby: currentPlayer =", currentPlayer)
-    console.log("[v0] Lobby: players =", players)
+    const roomId = searchParams.get("room")
+    const playerId = searchParams.get("player")
+    let cancelled = false
 
+    const init = async () => {
+      if (roomId && playerId) {
+        console.log("[LobbyPage] IDs trouvés dans l’URL → stockage sessionStorage")
+        sessionStorage.setItem("currentRoomId", roomId)
+        sessionStorage.setItem("currentPlayerId", playerId)
+      } else {
+        console.log("[LobbyPage] Aucun paramètre trouvé, on compte sur sessionStorage existant")
+      }
+
+      try {
+        await refreshRoom()
+      } catch (err) {
+        console.error("[LobbyPage] refreshRoom error:", err)
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+
+    init()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, refreshRoom])
+
+  // --- 2️⃣ Gestion des redirections une fois les données chargées ---
+  useEffect(() => {
+    if (isLoading) return // attend que le refresh soit fini
+
+    console.log("[LobbyPage] Vérification du contexte après chargement...")
     if (!room || !currentPlayer) {
+      console.warn("[LobbyPage] room ou currentPlayer null → retour à /")
       router.push("/")
       return
     }
@@ -28,37 +60,7 @@ export default function LobbyPage() {
       router.push("/briefing")
       return
     }
-
-    setIsLoading(false)
-  }, [room, currentPlayer, players, router])
-
-  const copyRoomCode = () => {
-    if (room) {
-      navigator.clipboard.writeText(room.code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }
-
-  const startGame = async () => {
-    if (room && players.length >= 2 && players.length <= 4) {
-      const { GameStore } = await import("@/lib/game-store")
-      await GameStore.startGame(room.id)
-      await refreshRoom()
-      router.push("/briefing")
-    }
-  }
-
-  if (isLoading || !room || !currentPlayer || players.length === 0) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Chargement de la salle d'attente...</p>
-        </div>
-      </div>
-    )
-  }
+  }, [isLoading, room, currentPlayer, router])
 
   const isHost = room.host_id === currentPlayer.id
   const canStart = players.length >= 2 && players.length <= room.max_players
