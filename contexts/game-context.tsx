@@ -1,16 +1,16 @@
+// game-context.tsx
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, useMemo, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { type GameRoom, type Player, type ChatMessage, GameStore } from "@/lib/game-store"
-import { useMemo } from "react"
 
 interface GameContextType {
   room: GameRoom | null
   currentPlayer: Player | null
   players: Player[]
   chatMessages: ChatMessage[]
-  refreshRoom: () => Promise<void>
+  refreshRoom: () => Promise<boolean>
   sendMessage: (message: string) => Promise<void>
 }
 
@@ -23,8 +23,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const supabase = useMemo(() => createClient(), [])
 
-  const refreshRoom = async () => {
-    if (typeof window === "undefined") return
+  const refreshRoom = async (): Promise<boolean> => {
+    if (typeof window === "undefined") return false
 
     const roomId = sessionStorage.getItem("currentRoomId")
     const playerId = sessionStorage.getItem("currentPlayerId")
@@ -37,26 +37,31 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setPlayers([])
       setCurrentPlayer(null)
       setChatMessages([])
-      return
+      return false
     }
 
     try {
       const updatedRoom = await GameStore.getRoom(roomId)
       console.log("[refreshRoom] room fetched:", updatedRoom)
-      setRoom(updatedRoom)
+      setRoom(updatedRoom ?? null)
 
       const updatedPlayers = await GameStore.getPlayers(roomId)
       console.log("[refreshRoom] players fetched:", updatedPlayers)
-      setPlayers(updatedPlayers)
+      setPlayers(updatedPlayers ?? [])
 
       const player = await GameStore.getPlayer(playerId)
       console.log("[refreshRoom] currentPlayer fetched:", player)
-      setCurrentPlayer(player)
+      setCurrentPlayer(player ?? null)
 
       const messages = await GameStore.getChatMessages(roomId)
-      setChatMessages(messages)
+      setChatMessages(messages ?? [])
+
+      const ok = !!updatedRoom && !!player
+      console.log("[refreshRoom] success =", ok)
+      return ok
     } catch (error) {
       console.error("[refreshRoom] erreur lors de la récupération des données :", error)
+      return false
     }
   }
 
@@ -66,83 +71,91 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-  if (typeof window === "undefined") return
+    if (typeof window === "undefined") return
 
-  let roomChannel: any = null
-  let playersChannel: any = null
-  let chatChannel: any = null
-  let cancelled = false
+    let roomChannel: any = null
+    let playersChannel: any = null
+    let chatChannel: any = null
+    let cancelled = false
 
-  const setupRealtime = async () => {
-    // ATTENDRE un peu pour éviter la course (sessionStorage peut être écrit juste avant la navigation)
-    let roomId = sessionStorage.getItem("currentRoomId")
-    let playerId = sessionStorage.getItem("currentPlayerId")
-    let tries = 0
-    while ((!roomId || !playerId) && tries < 10 && !cancelled) {
-      await new Promise((r) => setTimeout(r, 50))
-      roomId = sessionStorage.getItem("currentRoomId")
-      playerId = sessionStorage.getItem("currentPlayerId")
-      tries++
+    const setupRealtime = async () => {
+      // attendre que sessionStorage soit possiblement écrit
+      let roomId = sessionStorage.getItem("currentRoomId")
+      let playerId = sessionStorage.getItem("currentPlayerId")
+      let tries = 0
+      while ((!roomId || !playerId) && tries < 10 && !cancelled) {
+        await new Promise((r) => setTimeout(r, 100))
+        roomId = sessionStorage.getItem("currentRoomId")
+        playerId = sessionStorage.getItem("currentPlayerId")
+        tries++
+      }
+
+      if (!roomId || !playerId) {
+        console.warn("[GameProvider] Pas d'IDs trouvé après attente — pas d'abonnement Realtime")
+        return
+      }
+
+      try {
+        const ok = await refreshRoom()
+        console.log("[GameProvider] refreshRoom initial returned", ok)
+      } catch (err) {
+        console.error("[GameProvider] refreshRoom failed:", err)
+      }
+
+      // créer channels et logguer les payloads
+      roomChannel = supabase
+        .channel(`room:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` },
+          (payload) => {
+            console.log("[supabase] room change:", payload)
+            refreshRoom()
+          },
+        )
+        .subscribe()
+
+      playersChannel = supabase
+        .channel(`players:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
+          (payload) => {
+            console.log("[supabase] players change:", payload)
+            refreshRoom()
+          },
+        )
+        .subscribe()
+
+      chatChannel = supabase
+        .channel(`chat:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
+          (payload) => {
+            console.log("[supabase] chat insert:", payload)
+            refreshRoom()
+          },
+        )
+        .subscribe()
     }
 
-    if (!roomId || !playerId) {
-      console.warn("[GameProvider] Pas d'IDs trouvé après attente — pas d'abonnement Realtime")
-      return
+    setupRealtime()
+
+    return () => {
+      cancelled = true
+      if (roomChannel) supabase.removeChannel(roomChannel)
+      if (playersChannel) supabase.removeChannel(playersChannel)
+      if (chatChannel) supabase.removeChannel(chatChannel)
     }
+  }, [supabase]) // supabase memo
 
-    try {
-      await refreshRoom()
-    } catch (err) {
-      console.error("[GameProvider] refreshRoom failed:", err)
-    }
-
-    // Channels Realtime
-    roomChannel = supabase
-      .channel(`room:${roomId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` },
-        (payload) => {
-          console.log("[supabase] room change:", payload)
-          refreshRoom()
-        },
-      )
-      .subscribe()
-
-    playersChannel = supabase
-      .channel(`players:${roomId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          console.log("[supabase] players change:", payload)
-          refreshRoom()
-        },
-      )
-      .subscribe()
-
-    chatChannel = supabase
-      .channel(`chat:${roomId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          console.log("[supabase] chat insert:", payload)
-          refreshRoom()
-        },
-      )
-      .subscribe()
-  }
-
-  setupRealtime()
-
-  return () => {
-    cancelled = true
-    if (roomChannel) supabase.removeChannel(roomChannel)
-    if (playersChannel) supabase.removeChannel(playersChannel)
-    if (chatChannel) supabase.removeChannel(chatChannel)
-  }
-}, []) 
+  return (
+    <GameContext.Provider value={{ room, currentPlayer, players, chatMessages, refreshRoom, sendMessage }}>
+      {children}
+    </GameContext.Provider>
+  )
+}
 
 export function useGame() {
   const context = useContext(GameContext)

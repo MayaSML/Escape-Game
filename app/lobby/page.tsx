@@ -1,7 +1,8 @@
+// page.tsx (LobbyPage) — remplacer le haut du fichier par ceci
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation" // ✅ ajout ici
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useGame } from "@/contexts/game-context"
@@ -9,13 +10,12 @@ import { Copy, Check, Users, Crown, ArrowRight } from "lucide-react"
 
 export default function LobbyPage() {
   const router = useRouter()
-  const searchParams = useSearchParams() // ✅ pour lire ?room=...&player=...
+  const searchParams = useSearchParams()
   const { room, currentPlayer, players, refreshRoom } = useGame()
-
   const [copied, setCopied] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  // --- 1️⃣ Initialisation : lire les query params, sauvegarder, et charger la room ---
+  // 1) init: write sessionStorage from query params and retry refreshRoom jusqu'à succès
   useEffect(() => {
     const roomId = searchParams.get("room")
     const playerId = searchParams.get("player")
@@ -23,20 +23,28 @@ export default function LobbyPage() {
 
     const init = async () => {
       if (roomId && playerId) {
-        console.log("[LobbyPage] IDs trouvés dans l’URL → stockage sessionStorage")
+        console.log("[LobbyPage] params trouvés -> stockage sessionStorage", { roomId, playerId })
         sessionStorage.setItem("currentRoomId", roomId)
         sessionStorage.setItem("currentPlayerId", playerId)
       } else {
-        console.log("[LobbyPage] Aucun paramètre trouvé, on compte sur sessionStorage existant")
+        console.log("[LobbyPage] pas de params -> on utilise sessionStorage si présent")
       }
 
-      try {
-        await refreshRoom()
-      } catch (err) {
-        console.error("[LobbyPage] refreshRoom error:", err)
-      } finally {
-        if (!cancelled) setIsLoading(false)
+      // retry loop : plusieurs tentatives si la DB / réplication / realtime lag
+      let tries = 0
+      let ok = false
+      while (!ok && tries < 12 && !cancelled) {
+        try {
+          ok = await refreshRoom()
+          console.log(`[LobbyPage:init] tentative ${tries} -> refreshRoom() = ${ok}`)
+        } catch (err) {
+          console.error("[LobbyPage:init] refreshRoom erreur:", err)
+        }
+        if (!ok) await new Promise((r) => setTimeout(r, 200))
+        tries++
       }
+
+      if (!cancelled) setIsLoading(false)
     }
 
     init()
@@ -45,9 +53,9 @@ export default function LobbyPage() {
     }
   }, [searchParams, refreshRoom])
 
-  // --- 2️⃣ Gestion des redirections une fois les données chargées ---
+  // 2) redirections une fois isLoading false
   useEffect(() => {
-    if (isLoading) return // attend que le refresh soit fini
+    if (isLoading) return
 
     console.log("[LobbyPage] Vérification du contexte après chargement...")
     if (!room || !currentPlayer) {
@@ -62,8 +70,6 @@ export default function LobbyPage() {
     }
   }, [isLoading, room, currentPlayer, router])
 
-  const isHost = room.host_id === currentPlayer.id
-  const canStart = players.length >= 2 && players.length <= room.max_players
 
   return (
     <div className="min-h-screen bg-background">
