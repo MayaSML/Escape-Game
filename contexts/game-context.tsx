@@ -51,7 +51,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    refreshRoom()
+    const tryLoad = async () => {
+    const roomId = sessionStorage.getItem("currentRoomId")
+    const playerId = sessionStorage.getItem("currentPlayerId")
+
+    if (roomId && playerId) {
+      await refreshRoom()
+    } else {
+      // Réessayer dans 500ms tant que les IDs ne sont pas disponibles
+      setTimeout(tryLoad, 500)
+    }
+    }
+    tryLoad()
 
     const roomId = sessionStorage.getItem("currentRoomId")
     if (!roomId) return
