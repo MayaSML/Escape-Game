@@ -33,6 +33,11 @@ export default function HomePage() {
       console.log("[v0] handleCreateRoom: Room created, redirecting to lobby...")
       console.log("[v0] handleCreateRoom: Room data:", room)
       console.log("[v0] handleCreateRoom: Player data:", player)
+        // Stocker avant de router
+      sessionStorage.setItem("currentRoomId", room.id)
+      sessionStorage.setItem("currentPlayerId", player.id)
+        // Petit délai (utile pour laisser le temps au storage)
+      await new Promise((res) => setTimeout(res, 50))
       router.push(`/lobby?code=${room.code}`)
       console.log("[v0] handleCreateRoom: router.push called")
     } catch (err) {
@@ -66,6 +71,11 @@ export default function HomePage() {
       const { room, player } = await GameStore.joinRoom(roomCode.trim(), joinPlayerName.trim())
       console.log("[v0] handleJoinRoom: Successfully joined room:", room)
       console.log("[v0] handleJoinRoom: Player data:", player)
+        // Stocker avant de router
+      sessionStorage.setItem("currentRoomId", room.id)
+      sessionStorage.setItem("currentPlayerId", player.id)
+        // Petit délai (utile pour laisser le temps au storage)
+      await new Promise((res) => setTimeout(res, 50))
       router.push(`/lobby?code=${room.code}`)
       console.log("[v0] handleJoinRoom: router.push called")
     } catch (err: any) {

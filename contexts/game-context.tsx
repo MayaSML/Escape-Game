@@ -9,8 +9,8 @@ interface GameContextType {
   currentPlayer: Player | null
   players: Player[]
   chatMessages: ChatMessage[]
-  refreshRoom: () => void
-  sendMessage: (message: string) => void
+  refreshRoom: () => Promise<void>
+  sendMessage: (message: string) => Promise<void>
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined)
@@ -28,20 +28,34 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const roomId = sessionStorage.getItem("currentRoomId")
     const playerId = sessionStorage.getItem("currentPlayerId")
 
-    if (roomId) {
+    console.log("[refreshRoom] sessionStorage roomId =", roomId, "playerId =", playerId)
+
+    if (!roomId || !playerId) {
+      console.log("[refreshRoom] IDs manquants, reset du contexte")
+      setRoom(null)
+      setPlayers([])
+      setCurrentPlayer(null)
+      setChatMessages([])
+      return
+    }
+
+    try {
       const updatedRoom = await GameStore.getRoom(roomId)
+      console.log("[refreshRoom] room fetched:", updatedRoom)
       setRoom(updatedRoom)
 
       const updatedPlayers = await GameStore.getPlayers(roomId)
+      console.log("[refreshRoom] players fetched:", updatedPlayers)
       setPlayers(updatedPlayers)
 
-      if (playerId) {
-        const player = await GameStore.getPlayer(playerId)
-        setCurrentPlayer(player)
-      }
+      const player = await GameStore.getPlayer(playerId)
+      console.log("[refreshRoom] currentPlayer fetched:", player)
+      setCurrentPlayer(player)
 
       const messages = await GameStore.getChatMessages(roomId)
       setChatMessages(messages)
+    } catch (error) {
+      console.error("[refreshRoom] erreur lors de la récupération des données :", error)
     }
   }
 
@@ -51,59 +65,58 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const tryLoad = async () => {
-    const roomId = sessionStorage.getItem("currentRoomId")
-    const playerId = sessionStorage.getItem("currentPlayerId")
+    if (typeof window === "undefined") return
 
-    if (roomId && playerId) {
+    const initialize = async () => {
       await refreshRoom()
-    } else {
-      // Réessayer dans 500ms tant que les IDs ne sont pas disponibles
-      setTimeout(tryLoad, 500)
+
+      const roomId = sessionStorage.getItem("currentRoomId")
+      if (!roomId) return
+
+      const roomChannel = supabase
+        .channel(`room:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` },
+          () => {
+            console.log("[supabase] Mise à jour room détectée")
+            refreshRoom()
+          },
+        )
+        .subscribe()
+
+      const playersChannel = supabase
+        .channel(`players:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
+          () => {
+            console.log("[supabase] Mise à jour players détectée")
+            refreshRoom()
+          },
+        )
+        .subscribe()
+
+      const chatChannel = supabase
+        .channel(`chat:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
+          () => {
+            console.log("[supabase] Nouveau message détecté")
+            refreshRoom()
+          },
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(roomChannel)
+        supabase.removeChannel(playersChannel)
+        supabase.removeChannel(chatChannel)
+      }
     }
-    }
-    tryLoad()
 
-    const roomId = sessionStorage.getItem("currentRoomId")
-    if (!roomId) return
-
-    // Subscribe to room changes
-    const roomChannel = supabase
-      .channel(`room:${roomId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "game_rooms", filter: `id=eq.${roomId}` }, () => {
-        refreshRoom()
-      })
-      .subscribe()
-
-    // Subscribe to players changes
-    const playersChannel = supabase
-      .channel(`players:${roomId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
-        () => {
-          refreshRoom()
-        },
-      )
-      .subscribe()
-
-    // Subscribe to chat messages
-    const chatChannel = supabase
-      .channel(`chat:${roomId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
-        () => {
-          refreshRoom()
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(roomChannel)
-      supabase.removeChannel(playersChannel)
-      supabase.removeChannel(chatChannel)
-    }
+    initialize()
   }, [])
 
   return (
