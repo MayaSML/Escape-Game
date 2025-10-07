@@ -33,7 +33,7 @@ export default function HomePage() {
       console.log("[v0] handleCreateRoom: Room created, redirecting to lobby...")
       console.log("[v0] handleCreateRoom: Room data:", room)
       console.log("[v0] handleCreateRoom: Player data:", player)
-      router.push("/lobby/page.tsx")
+      router.push(`/lobby?code=${room.code}`)
       console.log("[v0] handleCreateRoom: router.push called")
     } catch (err) {
       console.error("[v0] handleCreateRoom: Error caught:", err)
@@ -66,7 +66,7 @@ export default function HomePage() {
       const { room, player } = await GameStore.joinRoom(roomCode.trim(), joinPlayerName.trim())
       console.log("[v0] handleJoinRoom: Successfully joined room:", room)
       console.log("[v0] handleJoinRoom: Player data:", player)
-      router.push("/lobby/page.tsx")
+      router.push(`/lobby?code=${room.code}`)
       console.log("[v0] handleJoinRoom: router.push called")
     } catch (err: any) {
       console.error("[v0] handleJoinRoom: Error caught:", err)
