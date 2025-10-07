@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useGame } from "@/contexts/game-context"
@@ -9,6 +9,7 @@ import { Copy, Check, Users, Crown, ArrowRight } from "lucide-react"
 
 export default function LobbyPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { room, currentPlayer, players, refreshRoom } = useGame()
   const [copied, setCopied] = useState(false)
   const [isLoading, setIsLoading] = useState(true)

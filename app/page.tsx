@@ -38,7 +38,7 @@ export default function HomePage() {
       sessionStorage.setItem("currentPlayerId", player.id)
         // Petit délai (utile pour laisser le temps au storage)
       await new Promise((res) => setTimeout(res, 50))
-      router.push(`/lobby?code=${room.code}`)
+      router.push(`/lobby?room=${room.id}&player=${player.id}`)
       console.log("[v0] handleCreateRoom: router.push called")
     } catch (err) {
       console.error("[v0] handleCreateRoom: Error caught:", err)
@@ -76,7 +76,7 @@ export default function HomePage() {
       sessionStorage.setItem("currentPlayerId", player.id)
         // Petit délai (utile pour laisser le temps au storage)
       await new Promise((res) => setTimeout(res, 50))
-      router.push(`/lobby?code=${room.code}`)
+      router.push(`/lobby?room=${room.id}&player=${player.id}`)
       console.log("[v0] handleJoinRoom: router.push called")
     } catch (err: any) {
       console.error("[v0] handleJoinRoom: Error caught:", err)
