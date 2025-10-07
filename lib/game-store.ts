@@ -117,30 +117,41 @@ export class GameStore {
 
   // Join an existing room by code
   static async joinRoom(code: string, playerName: string): Promise<{ room: GameRoom; player: Player }> {
+    console.log("[v0] joinRoom: Starting to join room with code:", code)
     const supabase = createClient()
 
     // Find room by code
+    console.log("[v0] joinRoom: Searching for room...")
     const { data: room, error: roomError } = await supabase
       .from("game_rooms")
       .select("*")
       .eq("code", code.toUpperCase())
       .single()
 
-    if (roomError) throw new Error("Room not found")
+    if (roomError) {
+      console.error("[v0] joinRoom: Room not found error:", roomError)
+      throw new Error("Partie introuvable. Vérifiez le code.")
+    }
+    console.log("[v0] joinRoom: Room found:", room)
 
     // Check if room is full
+    console.log("[v0] joinRoom: Checking room capacity...")
     const { data: players } = await supabase.from("players").select("*").eq("room_id", room.id)
+    console.log("[v0] joinRoom: Current players:", players)
 
     if (players && players.length >= room.max_players) {
-      throw new Error("Room is full")
+      console.error("[v0] joinRoom: Room is full")
+      throw new Error("La partie est complète (4 joueurs maximum)")
     }
 
     if (room.status !== "waiting") {
-      throw new Error("Game already started")
+      console.error("[v0] joinRoom: Game already started")
+      throw new Error("La partie a déjà commencé")
     }
 
     // Create player
     const playerIndex = players?.length || 0
+    console.log("[v0] joinRoom: Creating player at index:", playerIndex)
     const { data: player, error: playerError } = await supabase
       .from("players")
       .insert({
@@ -153,14 +164,20 @@ export class GameStore {
       .select()
       .single()
 
-    if (playerError) throw playerError
+    if (playerError) {
+      console.error("[v0] joinRoom: Player creation error:", playerError)
+      throw playerError
+    }
+    console.log("[v0] joinRoom: Player created successfully:", player)
 
     // Store in session
     if (typeof window !== "undefined") {
       sessionStorage.setItem("currentRoomId", room.id)
       sessionStorage.setItem("currentPlayerId", player.id)
+      console.log("[v0] joinRoom: Session storage updated")
     }
 
+    console.log("[v0] joinRoom: Returning room and player data")
     return { room, player }
   }
 

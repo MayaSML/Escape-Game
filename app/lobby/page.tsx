@@ -5,58 +5,62 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useGame } from "@/contexts/game-context"
-import { GameStore } from "@/lib/game-store"
 import { Copy, Check, Users, Crown, ArrowRight } from "lucide-react"
 
 export default function LobbyPage() {
   const router = useRouter()
-  const { room, currentPlayer, refreshRoom } = useGame()
+  const { room, currentPlayer, players, refreshRoom } = useGame()
   const [copied, setCopied] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    console.log("[v0] Lobby: room =", room)
+    console.log("[v0] Lobby: currentPlayer =", currentPlayer)
+    console.log("[v0] Lobby: players =", players)
+
     if (!room || !currentPlayer) {
       router.push("/")
       return
     }
 
-    // Check if game has started
-    if (room.isStarted) {
+    if (room.status === "playing") {
       router.push("/briefing")
+      return
     }
-  }, [room, currentPlayer, router])
+
+    setIsLoading(false)
+  }, [room, currentPlayer, players, router])
 
   const copyRoomCode = () => {
     if (room) {
-      navigator.clipboard.writeText(room.id)
+      navigator.clipboard.writeText(room.code)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
   }
 
-  const toggleReady = () => {
-    if (room && currentPlayer) {
-      GameStore.togglePlayerReady(room.id, currentPlayer.id)
-      refreshRoom()
+  const startGame = async () => {
+    if (room && players.length >= 2 && players.length <= 4) {
+      const { GameStore } = await import("@/lib/game-store")
+      await GameStore.startGame(room.id)
+      await refreshRoom()
+      router.push("/briefing")
     }
   }
 
-  const startGame = () => {
-    if (room && room.players.length >= 2) {
-      const allReady = room.players.every((p) => p.isReady)
-      if (allReady) {
-        GameStore.startGame(room.id)
-        refreshRoom()
-      }
-    }
+  if (isLoading || !room || !currentPlayer || players.length === 0) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Chargement de la salle d'attente...</p>
+        </div>
+      </div>
+    )
   }
 
-  if (!room || !currentPlayer) {
-    return null
-  }
-
-  const isHost = room.players[0].id === currentPlayer.id
-  const allReady = room.players.every((p) => p.isReady)
-  const canStart = room.players.length >= 2 && allReady
+  const isHost = room.host_id === currentPlayer.id
+  const canStart = players.length >= 2 && players.length <= room.max_players
 
   return (
     <div className="min-h-screen bg-background">
@@ -78,7 +82,7 @@ export default function LobbyPage() {
             <h1 className="font-serif text-4xl md:text-6xl font-bold mb-4 mystery-glow text-primary">
               Salle d'attente
             </h1>
-            <p className="text-lg text-muted-foreground">{room.name}</p>
+            <p className="text-lg text-muted-foreground">Escape Game - Octobre Rose</p>
           </div>
 
           {/* Room Code */}
@@ -87,7 +91,7 @@ export default function LobbyPage() {
               <p className="text-sm text-muted-foreground mb-2">Code de la partie</p>
               <div className="flex items-center justify-center gap-3">
                 <code className="text-2xl font-mono font-bold text-primary bg-primary/10 px-6 py-3 rounded-lg">
-                  {room.id.split("-")[1]}
+                  {room.code}
                 </code>
                 <Button onClick={copyRoomCode} variant="outline" size="icon" className="h-12 w-12 bg-transparent">
                   {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
@@ -102,39 +106,32 @@ export default function LobbyPage() {
             <div className="flex items-center gap-3 mb-6">
               <Users className="h-6 w-6 text-accent" />
               <h3 className="text-xl font-bold text-foreground">
-                Joueurs ({room.players.length}/{room.maxPlayers})
+                Joueurs ({players.length}/{room.max_players})
               </h3>
             </div>
 
             <div className="space-y-3">
-              {room.players.map((player, index) => (
+              {players.map((player) => (
                 <div
                   key={player.id}
                   className="flex items-center justify-between p-4 rounded-lg border border-border bg-background/50"
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className="h-10 w-10 rounded-full flex items-center justify-center font-bold text-white"
+                      className="h-10 w-10 rounded-full flex items-center justify-center text-2xl"
                       style={{ backgroundColor: player.color }}
                     >
-                      {player.name.charAt(0).toUpperCase()}
+                      {player.avatar}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-foreground">{player.name}</p>
-                        {index === 0 && <Crown className="h-4 w-4 text-yellow-500" />}
+                        {player.is_host && <Crown className="h-4 w-4 text-yellow-500" />}
                         {player.id === currentPlayer.id && (
                           <span className="text-xs text-muted-foreground">(Vous)</span>
                         )}
                       </div>
                     </div>
-                  </div>
-                  <div>
-                    {player.isReady ? (
-                      <span className="text-sm font-semibold text-green-500">Prêt</span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">En attente...</span>
-                    )}
                   </div>
                 </div>
               ))}
@@ -143,16 +140,6 @@ export default function LobbyPage() {
 
           {/* Actions */}
           <div className="space-y-4">
-            <Button
-              onClick={toggleReady}
-              className={`w-full ${
-                currentPlayer.isReady ? "bg-green-600 hover:bg-green-700" : "bg-primary hover:bg-primary/90"
-              } text-white`}
-              size="lg"
-            >
-              {currentPlayer.isReady ? "Annuler" : "Je suis prêt !"}
-            </Button>
-
             {isHost && (
               <Button
                 onClick={startGame}
@@ -165,11 +152,11 @@ export default function LobbyPage() {
               </Button>
             )}
 
-            {!canStart && (
+            {!isHost && <p className="text-center text-muted-foreground">En attente que l'hôte lance la partie...</p>}
+
+            {isHost && !canStart && (
               <p className="text-center text-sm text-muted-foreground">
-                {room.players.length < 2
-                  ? "En attente d'au moins 2 joueurs..."
-                  : "Tous les joueurs doivent être prêts pour commencer"}
+                {players.length < 2 ? "En attente d'au moins 2 joueurs..." : `Maximum ${room.max_players} joueurs`}
               </p>
             )}
           </div>

@@ -11,14 +11,15 @@ import { GameStore } from "@/lib/game-store"
 
 export default function HomePage() {
   const router = useRouter()
-  const [playerName, setPlayerName] = useState("")
+  const [createPlayerName, setCreatePlayerName] = useState("")
+  const [joinPlayerName, setJoinPlayerName] = useState("")
   const [roomCode, setRoomCode] = useState("")
   const [error, setError] = useState("")
   const [isCreating, setIsCreating] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
 
   const handleCreateRoom = async () => {
-    if (!playerName.trim()) {
+    if (!createPlayerName.trim()) {
       setError("Veuillez entrer votre nom")
       return
     }
@@ -28,11 +29,11 @@ export default function HomePage() {
 
     try {
       console.log("[v0] handleCreateRoom: Starting room creation...")
-      const { room, player } = await GameStore.createRoom(playerName.trim())
+      const { room, player } = await GameStore.createRoom(createPlayerName.trim())
       console.log("[v0] handleCreateRoom: Room created, redirecting to lobby...")
       console.log("[v0] handleCreateRoom: Room data:", room)
       console.log("[v0] handleCreateRoom: Player data:", player)
-      router.push("/auth/login")
+      router.push("/lobby")
       console.log("[v0] handleCreateRoom: router.push called")
     } catch (err) {
       console.error("[v0] handleCreateRoom: Error caught:", err)
@@ -45,7 +46,7 @@ export default function HomePage() {
   }
 
   const handleJoinRoom = async () => {
-    if (!playerName.trim()) {
+    if (!joinPlayerName.trim()) {
       setError("Veuillez entrer votre nom")
       return
     }
@@ -59,12 +60,20 @@ export default function HomePage() {
     setError("")
 
     try {
-      const { room, player } = await GameStore.joinRoom(roomCode.trim(), playerName.trim())
-      router.push("/auth/login")
+      console.log("[v0] handleJoinRoom: Starting to join room...")
+      console.log("[v0] handleJoinRoom: Room code:", roomCode.trim())
+      console.log("[v0] handleJoinRoom: Player name:", joinPlayerName.trim())
+      const { room, player } = await GameStore.joinRoom(roomCode.trim(), joinPlayerName.trim())
+      console.log("[v0] handleJoinRoom: Successfully joined room:", room)
+      console.log("[v0] handleJoinRoom: Player data:", player)
+      router.push("/lobby")
+      console.log("[v0] handleJoinRoom: router.push called")
     } catch (err: any) {
+      console.error("[v0] handleJoinRoom: Error caught:", err)
       setError(err.message || "Impossible de rejoindre cette partie")
       console.error(err)
     } finally {
+      console.log("[v0] handleJoinRoom: Finally block")
       setIsJoining(false)
     }
   }
@@ -113,9 +122,9 @@ export default function HomePage() {
                   <Input
                     id="create-player-name"
                     placeholder="Entrez votre nom"
-                    value={playerName}
+                    value={createPlayerName}
                     onChange={(e) => {
-                      setPlayerName(e.target.value)
+                      setCreatePlayerName(e.target.value)
                       setError("")
                     }}
                     className="mt-1"
@@ -127,7 +136,7 @@ export default function HomePage() {
                   onClick={handleCreateRoom}
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                   size="lg"
-                  disabled={isCreating || !playerName.trim()}
+                  disabled={isCreating || !createPlayerName.trim()}
                 >
                   {isCreating ? (
                     <>
@@ -159,9 +168,9 @@ export default function HomePage() {
                   <Input
                     id="join-player-name"
                     placeholder="Entrez votre nom"
-                    value={playerName}
+                    value={joinPlayerName}
                     onChange={(e) => {
-                      setPlayerName(e.target.value)
+                      setJoinPlayerName(e.target.value)
                       setError("")
                     }}
                     className="mt-1"
@@ -189,7 +198,7 @@ export default function HomePage() {
                   onClick={handleJoinRoom}
                   className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
                   size="lg"
-                  disabled={isJoining || !playerName.trim() || !roomCode.trim()}
+                  disabled={isJoining || !joinPlayerName.trim() || !roomCode.trim()}
                 >
                   {isJoining ? (
                     <>
